@@ -1,14 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import trainingData from "../assets/training_log.json";
+import trainingData from "../assets/training_log_qlearning.json";
 
-const arrows = ["↑", "→", "↓", "←"];
-const actionNames = ["Up", "Right", "Down", "Left"];
+const arrows = ["↑", "→", "↓", "←"]
 
-function Qlearning() {
-  const [episodeIndex, setEpisodeIndex] = useState(0);
-  const [stepIndex, setStepIndex] = useState(0);
+function Qlearning({ episodeIndex, stepIndex, setEpisodeIndex, setStepIndex }) {
   const [log, setLog] = useState([]);
-
   const gridRows = 4;
   const gridCols = 12;
   const totalStates = gridRows * gridCols;
@@ -18,302 +14,201 @@ function Qlearning() {
 
   useEffect(() => setLog(trainingData || []), []);
 
-  const episodes = useMemo(() => {
-    const ids = [...new Set(log.map((x) => x.episode))];
-    ids.sort((a, b) => a - b);
-    return ids;
-  }, [log]);
+  const episodes = useMemo(() => [...new Set(log.map((x) => x.episode))].sort((a, b) => a - b), [log]);
 
   const currentEpisode = episodes[episodeIndex] ?? episodes[0];
-  const episodeSteps = useMemo(
-    () => log.filter((x) => x.episode === currentEpisode),
-    [log, currentEpisode]
-  );
-
+  const episodeSteps = useMemo(() => log.filter((x) => x.episode === currentEpisode), [log, currentEpisode]);
   const safeStepIndex = Math.min(stepIndex, Math.max(episodeSteps.length - 1, 0));
   const current = episodeSteps[safeStepIndex];
+  if (!log.length || !current) return <p>Loading...</p>;
 
-  if (!log.length || !current) {
-    return <p style={{ marginTop: "100px" }}>Loading training data...</p>;
-  }
+  const { state, action, reward, qTable_snapshot, epsilon, new_state } = current;
+  const bestActions = (qTable_snapshot || []).map(v => v.indexOf(Math.max(...v)));
+  const qValues = qTable_snapshot?.[state] ?? [0, 0, 0, 0];
+  const bestAction = bestActions[state];
+  const isGreedy = action === bestAction;
+  const displayNext = new_state;
+  const nextMaxAction = bestActions[displayNext];
+  const nextMaxQ = qTable_snapshot?.[displayNext]?.[nextMaxAction] ?? 0;
+  const updatedQ = qValues[action] + 0.1 * (reward + 0.9 * nextMaxQ - qValues[action]);
+  const allQ = qTable_snapshot.flat();
+  const minQ = Math.min(...allQ);
+  const maxQ = Math.max(...allQ);
+  const stateToCoord = (s) => `(${Math.floor(s / gridCols)},${s % gridCols})`;
 
-  const qTable = current.qTable_snapshot || [];
-  const flatQ = qTable.flat();
-  const qMin = flatQ.length ? Math.min(...flatQ) : 0;
-  const qMax = flatQ.length ? Math.max(...flatQ) : 1;
-  const qRange = qMax - qMin || 1;
-  const normalize = (v) => (v - qMin) / qRange;
-
-  const bestActions = qTable.map((values) => values.indexOf(Math.max(...values)));
-  const { state, action, reward, epsilon, step } = current;
-  const currentQValues = qTable[state] || [0, 0, 0, 0];
-  const cumulativeReward = episodeSteps
-    .slice(0, safeStepIndex + 1)
-    .reduce((s, x) => s + (x.reward ?? 0), 0);
-
-  const cardStyle = {
-    backgroundColor: "#fff",
-    borderRadius: "12px",
-    padding: "1.25rem 1.5rem",
-    boxShadow: "0 10px 25px rgba(15,23,42,0.10)",
-    border: "1px solid rgba(148,163,184,0.35)",
+  const bgColorForQ = (val) => {
+    const t = Math.max(0, Math.min(1, (val - minQ) / ((maxQ - minQ) || 1e-6)));
+    const low  = { r: 185, g: 245, b: 225 };
+    const mid  = { r:  90, g: 200, b: 180 };
+    const high = { r:  30, g: 105, b: 155 };
+    let r, g, b;
+    if (t < 0.5) {
+      const p = t / 0.5;
+      r = low.r + p * (mid.r - low.r);
+      g = low.g + p * (mid.g - low.g);
+      b = low.b + p * (mid.b - low.b);
+    } else {
+      const p = (t - 0.5) / 0.5;
+      r = mid.r + p * (high.r - mid.r);
+      g = mid.g + p * (high.g - mid.g);
+      b = mid.b + p * (high.b - mid.b);
+    }
+    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
   };
 
+  const slice = [];
+  if (state > 0) slice.push(state - 1);
+  slice.push(state);
+  if (state < totalStates - 1) slice.push(state + 1);
+
+  const containerStyle = {
+    maxWidth: "900px",
+    margin: "auto",
+    padding: "1.2rem",
+    fontFamily: "Inter, sans-serif",
+    background: "#fefefe",
+    borderRadius: "16px",
+    boxShadow: "0 6px 20px rgba(0,0,0,0.1)"
+  };
+
+  const sliderStyle = { width: "200px" };
+  const sliderContainerStyle = {
+    display: "flex",
+    gap: "1.2rem",
+    justifyContent: "center",
+    marginBottom: "1rem",
+    flexWrap: "wrap"
+  };
+  const labelStyle = { fontSize: "0.85rem", textAlign: "center" };
+
   return (
-    <div style={{ padding: "2rem 1rem 3rem", maxWidth: "1100px", margin: "0 auto" }}>
-      <h2 style={{ marginBottom: "0.4rem" }}>Episode {currentEpisode} — Step {step}</h2>
-      <p style={{ margin: 0, color: "#4b5563" }}>
-        State: <strong>{state}</strong> · Action: <strong>{arrows[action]}</strong> · Reward:{" "}
-        <strong>{reward}</strong> · ε: <strong>{epsilon.toFixed(2)}</strong>
-      </p>
+    <div style={containerStyle}>
+      <h2 style={{ textAlign: "center", marginBottom: "0.8rem", color: "#0077b6", fontSize: "1.3rem" }}>Q-Learning (CliffWalk)</h2>
 
-      <div style={{ display: "flex", gap: "1.5rem", marginTop: "1.75rem", flexWrap: "wrap" }}>
-        <div style={{ flex: "1 1 260px", ...cardStyle }}>
-          <h3 style={{ margin: 0, marginBottom: "0.75rem", fontSize: "1.05rem" }}>Navigation</h3>
-          <div style={{ marginBottom: "1rem" }}>
-            <label style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>Episode</span>
-              <span style={{ fontWeight: 600 }}>{currentEpisode}</span>
-            </label>
-            <input
-              type="range"
-              min="0"
-              max={Math.max(episodes.length - 1, 0)}
-              value={episodeIndex}
-              onChange={(e) => {
-                setEpisodeIndex(Number(e.target.value));
-                setStepIndex(0);
-              }}
-              style={{ width: "100%" }}
-            />
-          </div>
-          <div>
-            <label style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>Step</span>
-              <span style={{ fontWeight: 600 }}>{safeStepIndex}</span>
-            </label>
-            <input
-              type="range"
-              min="0"
-              max={Math.max(episodeSteps.length - 1, 0)}
-              value={safeStepIndex}
-              onChange={(e) => setStepIndex(Number(e.target.value))}
-              style={{ width: "100%" }}
-            />
-          </div>
+      {/* Sliders */}
+      <div style={sliderContainerStyle}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <label style={{ ...labelStyle, fontSize: "1rem" }}>Episode: {episodeIndex}</label>
+          <input 
+            type="range" 
+            min="0" 
+            max={episodes.length - 1} 
+            value={episodeIndex} 
+            onChange={(e) => { setEpisodeIndex(Number(e.target.value)); setStepIndex(0); }} 
+            style={{ ...sliderStyle, width: "200px", height: "6px" }} 
+          />
         </div>
-
-        <div style={{ flex: "1 1 260px", ...cardStyle }}>
-          <h3 style={{ margin: 0, marginBottom: "0.75rem", fontSize: "1.05rem" }}>Episode Stats</h3>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2,1fr)",
-              gap: "0.75rem",
-              fontSize: "0.9rem",
-            }}
-          >
-            <Stat label="Steps so far" value={safeStepIndex + 1} />
-            <Stat label="Cumulative reward" value={cumulativeReward.toFixed(1)} />
-            <Stat label="Current ε" value={epsilon.toFixed(3)} />
-            <Stat label="Chosen action" value={`${arrows[action]} (${actionNames[action]})`} />
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <label style={{ ...labelStyle, fontSize: "1rem" }}>Step: {safeStepIndex}</label>
+          <input 
+            type="range" 
+            min="0" 
+            max={Math.max(episodeSteps.length - 1, 0)} 
+            value={safeStepIndex} 
+            onChange={(e) => setStepIndex(Number(e.target.value))} 
+            style={{ ...sliderStyle, width: "200px", height: "6px" }} 
+          />
         </div>
       </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "2fr 1.4fr",
-          gap: "2rem",
-          marginTop: "2.25rem",
-          alignItems: "flex-start",
-        }}
-      >
-        <div style={cardStyle}>
-          <h3 style={{ marginTop: 0 }}>CliffWalking Grid (Original Colors)</h3>
-          <div
-            style={{
-              marginTop: "1rem",
-              display: "grid",
-              gridTemplateColumns: `repeat(${gridCols},45px)`,
-              gridTemplateRows: `repeat(${gridRows},45px)`,
-              justifyContent: "center",
-              border: "2px solid #333",
-              backgroundColor: "#1e1e1e",
-            }}
-          >
-            {Array.from({ length: totalStates }, (_, i) => {
-              const isAgent = i === state;
-              const bestAction = bestActions[i];
-              const isCliff = cliffStates.includes(i);
-              const isStart = i === startState;
-              const isGoal = i === goalState;
+      {/* Grid */}
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: "1rem", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${gridCols}, 36px)`, gridTemplateRows: `repeat(${gridRows}, 36px)`, overflow: "hidden", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}>
+          {Array.from({ length: totalStates }, (_, i) => {
+            const isAgent = i === state, isCliff = cliffStates.includes(i), isStart = i === startState, isGoal = i === goalState;
+            let bg = "#000000e3";
+            if (isCliff) bg = "#dc3545";
+            if (isGoal) bg = "#ffc107";
+            if (isStart) bg = "#0d6efd";
+            if (isAgent) bg = "#28a745";
 
-              let bgColor = "#2c2c2c";
-              let content = arrows[bestAction];
-
-              if (isCliff) bgColor = "#b22222";
-              if (isGoal) bgColor = "#ffd700";
-              if (isStart) bgColor = "#1e90ff";
-              if (isAgent) {
-                bgColor = "#4CAF50";
-                content = arrows[action];
-              }
-
-              return (
-                <div
-                  key={i}
-                  style={{
-                    border: "1px solid #555",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: bgColor,
-                    color: "white",
-                    fontSize: "1.2rem",
-                    fontWeight: isAgent ? "bold" : "normal",
-                  }}
-                  title={`State ${i}`}
-                >
-                  {isStart ? "S" : isGoal ? "G" : isCliff ? "X" : content}
-                </div>
-              );
-            })}
-          </div>
-          <p
-            style={{
-              marginTop: "0.75rem",
-              fontSize: "0.8rem",
-              color: "#6b7280",
-            }}
-          >
-            <LegendSwatch color="#4CAF50" label="Agent" />{" "}
-            <LegendSwatch color="#1e90ff" label="Start" />{" "}
-            <LegendSwatch color="#ffd700" label="Goal" />{" "}
-            <LegendSwatch color="#b22222" label="Cliff" />
-          </p>
-        </div>
-
-        <div style={cardStyle}>
-          <h3 style={{ marginTop: 0 }}>Q-values for State {state}</h3>
-          {currentQValues.map((qVal, idx) => {
-            const norm = normalize(qVal);
-            const width = 10 + norm * 90;
-            const isChosen = idx === action;
             return (
-              <div key={idx} style={{ marginBottom: "0.75rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem" }}>
-                  <span
-                    style={{
-                      fontWeight: isChosen ? 700 : 500,
-                      color: isChosen ? "#111827" : "#4b5563",
-                    }}
-                  >
-                    {arrows[idx]} {actionNames[idx]}
-                  </span>
-                  <span
-                    style={{
-                      fontWeight: isChosen ? 700 : 500,
-                      color: isChosen ? "#111827" : "#4b5563",
-                    }}
-                  >
-                    {qVal.toFixed(3)}
-                  </span>
-                </div>
-                <div style={{ width: "100%", height: "10px", borderRadius: "999px", backgroundColor: "#e5e7eb" }}>
-                  <div
-                    style={{
-                      width: `${width}%`,
-                      height: "100%",
-                      borderRadius: "999px",
-                      background: isChosen
-                        ? "linear-gradient(90deg,#22c55e,#16a34a)"
-                        : "linear-gradient(90deg,#38bdf8,#0ea5e9)",
-                      transition: "width 120ms linear",
-                    }}
-                  />
-                </div>
+              <div key={i} style={{ border: "1px solid #444", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: isAgent ? "bold" : "500", fontSize: "0.85rem", backgroundColor: bg, transition: "0.3s" }} title={`State ${stateToCoord(i)}`}>
+                {isStart ? "S" : isGoal ? "G" : isCliff ? "X" : arrows[bestActions[i]]}
               </div>
             );
           })}
-          <p style={{ marginTop: "0.75rem", fontSize: "0.75rem", color: "#9ca3af" }}>
-            Q-value range: [{qMin.toFixed(3)}, {qMax.toFixed(3)}]
-          </p>
+        </div>
+
+        {/* Color labels */}
+        <div style={{ display: "flex", gap: "10px", marginTop: "6px", fontSize: "0.8rem", flexWrap: "wrap", justifyContent: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><div style={{ width: "16px", height: "16px", background: "#0d6efd" }} />Start</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><div style={{ width: "16px", height: "16px", background: "#ffc107" }} />Goal</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><div style={{ width: "16px", height: "16px", background: "#dc3545" }} />Cliff</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><div style={{ width: "16px", height: "16px", background: "#28a745" }} />Agent</div>
         </div>
       </div>
 
-      <details style={{ marginTop: "2rem" }}>
-        <summary
-          style={{
-            cursor: "pointer",
-            fontWeight: 600,
-            fontSize: "0.95rem",
-            color: "#1f2937",
-          }}
-        >
-          Show full Q-table
-        </summary>
-        <div style={{ marginTop: "1rem", maxHeight: "380px", overflowY: "auto" }}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4,70px)",
-              justifyContent: "flex-start",
-              gap: "4px",
-              fontSize: "0.75rem",
-            }}
-          >
-            {qTable.flat().map((val, i) => {
-              const normalized = Math.min(Math.max((val + 10) / 20, 0), 1);
-              const hue = 240 - normalized * 240;
-              return (
-                <div
-                  key={i}
-                  style={{
-                    border: "1px solid #444",
-                    borderRadius: "3px",
-                    padding: "0.2rem",
-                    backgroundColor: `hsl(${hue},70%,60%)`,
-                    color: "#fff",
-                    textAlign: "center",
-                  }}
-                >
-                  {val.toFixed(1)}
-                </div>
-              );
-            })}
-          </div>
+      {/* Q-table */}
+      <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+        <h4 style={{ marginBottom: "0.4rem", color: "#0077b6", fontSize: "1rem", fontWeight: "600" }}>Policy (Q-table)</h4>
+        <table style={{ margin: "auto", borderCollapse: "separate", borderSpacing: "0", fontSize: "0.75rem", minWidth: "260px", boxShadow: "0 0 4px rgba(0,0,0,0.08)", borderRadius: "6px", overflow: "hidden" }}>
+          <thead>
+            <tr style={{ backgroundColor: "#e9ecef" }}>
+              <th style={{ padding: "6px 8px", color: "#333", borderBottom: "1px solid #ccc", fontWeight: "600" }}>State</th>
+              {arrows.map((a, i) => <th key={i} style={{ padding: "6px 8px", color: "#333", borderBottom: "1px solid #ccc", fontWeight: "600" }}>{a}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colSpan={5} style={{ padding: "6px", textAlign: "center", color: "#777", backgroundColor: "#f9f9f9", borderBottom: "1px solid #eee", fontSize: '15px' }}>...</td></tr>
+            {slice.map((s, rowIndex) => (
+              <tr key={s} style={{ backgroundColor: rowIndex % 2 === 0 ? "#fcfcfc" : "#f4f4f4", borderBottom: "1px solid #eee" }}>
+                <td style={{ padding: "6px 8px", textAlign: "center", fontWeight: s === state ? "bold" : "500", borderRight: "1px solid #ddd" }}>{stateToCoord(s)}</td>
+                {arrows.map((_, i) => {
+                  const val = qTable_snapshot?.[s]?.[i] ?? 0;
+                  return <td key={i} style={{ padding: "6px 8px", backgroundColor: bgColorForQ(val), fontWeight: s === state && i === action ? "bold" : "500", color: val > (minQ + maxQ) / 2 ? "white" : "black", borderRight: i < arrows.length - 1 ? "1px solid #ddd" : "", transition: "0.3s" }} title={`Q(s=${stateToCoord(s)}, a=${arrows[i]}) = ${val.toFixed(2)}`}>{val.toFixed(2)}</td>
+                })}
+              </tr>
+            ))}
+            <tr><td colSpan={5} style={{ padding: "6px", textAlign: "center", color: "#777", backgroundColor: "#f9f9f9", fontSize: '15px' }}>...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Current vs Action Info */}
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", marginBottom: "1.2rem" }}>
+        <div style={{ flex: "1 1 240px", background: "#e0f7fa", padding: "0.8rem", borderRadius: "10px", boxShadow: "0 2px 10px rgba(0,0,0,0.08)", minWidth: "220px", fontSize: "0.8rem" }}>
+          <p><b>Current State:</b> {stateToCoord(state)}</p>
+          <p><b>Optimal Action (Max):</b> {arrows[bestAction]} ({qTable_snapshot?.[state]?.[bestAction]?.toFixed(2)})</p>
+          <p><b>Epsilon:</b> {epsilon?.toFixed(2) ?? "N/A"}</p>
+          <p><b>Chosen Action:</b> <span style={{ color: isGreedy ? "#007f00" : "#c1121f" }}>{arrows[action]}</span> {isGreedy ? "(Greedy)" : "(Exploring)"}</p>
         </div>
-      </details>
-    </div>
-  );
-}
+        <div style={{ flex: "1 1 240px", background: "#fff3e0", padding: "0.8rem", borderRadius: "10px", boxShadow: "0 2px 10px rgba(0,0,0,0.08)", minWidth: "220px", fontSize: "0.8rem" }}>
+          <p><b>Chosen Action Q-Value:</b> {qValues[action].toFixed(2)}</p>
+          <p><b>Next State:</b> {stateToCoord(displayNext)}</p>
+          <p><b>Reward:</b> {reward}</p>
+          <p><b>Next-State Optimal Action (Max):</b> {arrows[nextMaxAction] ?? "-"} ({nextMaxQ?.toFixed(2) ?? "N/A"})</p>
+        </div>
+      </div>
 
-function Stat({ label, value }) {
-  return (
-    <div>
-      <div style={{ color: "#6b7280", fontSize: "0.8rem" }}>{label}</div>
-      <div style={{ fontWeight: 600 }}>{value}</div>
+      {/* Q-update formula */}
+      <div style={{ background: "#f1f3f5", padding: "0.6rem 1rem", borderRadius: "10px", boxShadow: "0 2px 10px rgba(0,0,0,0.05)", textAlign: "center", maxWidth: "560px", margin: "auto", fontSize: "0.8rem" }}>
+        <h4 style={{ color: "#0077b6", marginBottom: "4px", fontSize: "0.9rem" }}>Update Rule</h4>
+        <p style={{ margin: "3px 0" }}>Q(s,a) ← Q(s,a) + α [ r + γ max(Q(s′,a′)) − Q(s,a) ]</p>
+        <p style={{ margin: "3px 0", background: "#e0f2f1", padding: "5px", borderRadius: "4px" }}>
+          <b>{qValues[action].toFixed(2)}</b> + 0.1 × [ <b>{reward}</b> + 0.9 × (<b>{nextMaxQ.toFixed(2)}</b>) − (<b>{qValues[action].toFixed(2)}</b>) ]
+        </p>
+        <p style={{ margin: "3px 0" }}>Q-Table[{stateToCoord(state)}][{arrows[action]}] = <b style={{ color: "#005f99" }}>{updatedQ.toFixed(3)}</b></p>
+      </div>
     </div>
-  );
-}
-
-function LegendSwatch({ color, label }) {
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
-      <span
-        style={{
-          width: "10px",
-          height: "10px",
-          borderRadius: "999px",
-          backgroundColor: color,
-          boxShadow: "0 0 0 1px rgba(15,23,42,0.3)",
-        }}
-      />
-      <span>{label}</span>
-    </span>
   );
 }
 
 export default Qlearning;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

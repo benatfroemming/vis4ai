@@ -1,267 +1,397 @@
 import { useEffect, useState } from "react";
-import fullHistoryData from "../assets/full_episode_history.json";
-import pcaData from "../assets/pca_history.json";
+import fullHistoryData from "../assets/training_log_deepqlearning.json";
 
-const actionsMap = ["←", "→"];
+const actionLabels = ["←", "→"];
+const gamma = 0.99;
 
-function Deepqlearning() {
-    const [episodeIndex, setEpisodeIndex] = useState(0);
-    const [stepIndex, setStepIndex] = useState(0);
-    const [episodes, setEpisodes] = useState([]);
-    const [pcaSnapshots, setPcaSnapshots] = useState([]);
+function Deepqlearning({ episodeIndex, stepIndex, setEpisodeIndex, setStepIndex }) {
+  const [episodes, setEpisodes] = useState([]);
 
-    useEffect(() => {
-        setEpisodes(fullHistoryData || []);
-        setPcaSnapshots(pcaData || []);
-    }, []);
+  useEffect(() => setEpisodes(fullHistoryData || []), []);
 
-    if (!episodes.length) {
-        return <p style={{ marginTop: "100px" }}>Loading training data...</p>;
-    }
+  if (!episodes.length) return <p>Loading...</p>;
 
-    const currentEpisode = episodes[episodeIndex];
-    const steps = currentEpisode.steps || [];
-    const currentStep = steps[stepIndex] || {};
-    const pcaSnapshot = pcaSnapshots.find(
-        (p) => p.episode === currentEpisode.episode
-    );
+  const currentEpisode = episodes[episodeIndex] || {};
+  const steps = currentEpisode.steps || [];
+  const safeStepIndex = Math.min(stepIndex, Math.max(steps.length - 1, 0));
+  const currentStep = steps[safeStepIndex] || {};
 
-    // Extract state values safely
-    const state = Array.isArray(currentStep.state?.[0])
-        ? currentStep.state[0]
-        : currentStep.state;
-    const x = state?.[0] ?? 0; // cart position
-    const theta = state?.[2] ?? 0; // pole angle (radians)
-    const poleAngleDeg = theta * (180 / Math.PI); // radians -> degrees
+  const state = currentStep.state || [0, 0, 0, 0];
+  const nextState = currentStep.next_state || state;
+  const epsilon = currentStep.epsilon ?? 0;
 
-    return (
-        <div style={{ padding: "1rem", textAlign: "center" }}>
-        <h2>
-            Episode {currentEpisode.episode} — Step {currentStep.step ?? 0}
-        </h2>
-        <p>
-            Action: {actionsMap[currentStep.action] ?? "—"} | Reward:{" "}
-            {currentStep.reward?.toFixed(2) ?? "0.00"}
-        </p>
+  const qValues = currentStep.q_values || [0, 0];
+  const nextQValues = currentStep.next_q_values || [0, 0];
+  const chosenAction = currentStep.action ?? 0;
 
-        {/* Sliders */}
-        <div style={{ margin: "1rem 0" }}>
-            <label>Episode: {currentEpisode.episode}</label>
-            <input
+  const bestAction = qValues.indexOf(Math.max(...qValues));
+  const isGreedy = chosenAction === bestAction;
+
+  const reward = currentStep.reward ?? 0;
+  const nextMaxAction = nextQValues.indexOf(Math.max(...nextQValues));
+  const nextMaxQ = Math.max(...nextQValues);
+
+  const target = reward + gamma * nextMaxQ;
+  const loss = (target - qValues[chosenAction]) ** 2;
+
+  // Q-value heatmap
+  const minQ = Math.min(...qValues.concat(nextQValues));
+  const maxQ = Math.max(...qValues.concat(nextQValues));
+  const bgColorForQ = (val) => {
+    const t = (val - minQ) / ((maxQ - minQ) || 1e-6);
+    const r = 200 - t * 100;
+    const g = 220 + t * 20;
+    const b = 255 - t * 80;
+    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+  };
+
+  // CartPole visualization
+  const x = state[0] ?? 0;
+  const theta = state[2] ?? 0;
+  const poleAngleDeg = theta * (180 / Math.PI);
+
+  const containerStyle = {
+    maxWidth: "950px",
+    margin: "auto",
+    padding: "1rem",
+    fontFamily: "Inter, sans-serif",
+    background: "#fefefe",
+    borderRadius: "16px",
+    boxShadow: "0 6px 18px rgba(0,0,0,0.1)"
+  };
+
+  const sliderStyle = { width: "200px" };
+  const sliderContainerStyle = {
+    display: "flex",
+    gap: "1.2rem",
+    justifyContent: "center",
+    marginBottom: "1rem",
+    flexWrap: "wrap"
+  };
+  const labelStyle = { fontSize: "0.85rem", textAlign: "center" };
+
+  return (
+    <div style={containerStyle}>
+      <h2 style={{ textAlign: "center", marginBottom: "1rem", color: "#ff6600", fontSize: "1.3rem" }}>
+        Deep Q-Learning (CartPole)
+      </h2>
+
+      {/* Sliders */}
+      <div style={sliderContainerStyle}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <label style={labelStyle}>Episode: {episodeIndex}</label>
+          <input
             type="range"
             min="0"
             max={episodes.length - 1}
             value={episodeIndex}
             onChange={(e) => {
-                setEpisodeIndex(Number(e.target.value));
-                setStepIndex(0);
+              setEpisodeIndex(Number(e.target.value));
+              setStepIndex(0);
             }}
-            style={{ width: "80%" }}
-            />
+            style={sliderStyle}
+          />
         </div>
-
-        <div style={{ margin: "1rem 0" }}>
-            <label>Step: {stepIndex}</label>
-            <input
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <label style={labelStyle}>Step: {safeStepIndex}</label>
+          <input
             type="range"
             min="0"
             max={steps.length - 1}
-            value={stepIndex}
+            value={safeStepIndex}
             onChange={(e) => setStepIndex(Number(e.target.value))}
-            style={{ width: "80%" }}
-            />
+            style={sliderStyle}
+          />
         </div>
+      </div>
 
-        {/* CARTPOLE VISUALIZATION */}
-        <div
-            style={{
-            marginTop: "2rem",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "2rem",
-            }}
-        >
+      {/* CartPole visualization */}
+<div
+  style={{
+    width: "100%",
+    maxWidth: "400px", // smaller width
+    height: "140px",   // smaller height
+    position: "relative",
+    border: "2px solid #333",
+    borderRadius: "12px",
+    backgroundColor: "#f0f4f8",
+    margin: "auto",
+    boxShadow: "inset 0 0 6px rgba(0,0,0,0.05)",
+  }}
+>
+  {/* Ground */}
+  <div
+    style={{
+      position: "absolute",
+      bottom: "12px",
+      left: "0",
+      width: "100%",
+      height: "3px",
+      backgroundColor: "#888",
+    }}
+  />
+
+  {/* Cart */}
+  <div
+    style={{
+      position: "absolute",
+      bottom: "15px",
+      left: `${30 + ((x + 2.4) / 4.8) * 340}px`, // scaled x for smaller container
+      width: "40px",  // smaller cart
+      height: "20px",
+      backgroundColor: "#0077b6",
+      borderRadius: "5px",
+      transform: "translateX(-50%)",
+      boxShadow: "0 1.5px 3px rgba(0,0,0,0.2)",
+    }}
+  />
+
+  {/* Pole */}
+  <div
+    style={{
+      position: "absolute",
+      bottom: "35px",
+      left: `${30 + ((x + 2.4) / 4.8) * 340}px`,
+      width: "6px",   // thinner pole
+      height: "90px", // shorter pole
+      backgroundColor: "#ffbf00",
+      transformOrigin: "bottom center",
+      transform: `translateX(-50%) rotate(${poleAngleDeg}deg)`,
+      borderRadius: "3px",
+      boxShadow: "0 1.5px 3px rgba(0,0,0,0.2)",
+    }}
+  />
+
+</div>
+
+
+      {/* Neural Network Visualization */}
+      <h4
+        style={{
+          textAlign: "center",
+          color: "#0077b6",
+          fontSize: "0.9rem",
+          marginTop: "1rem",
+          marginBottom: "0.5rem",
+        }}
+      >
+        Policy (Neural Network)
+      </h4>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          gap: "2rem",
+          flexWrap: "wrap",
+          marginBottom: "1rem",
+        }}
+      >
+        {/* Input Layer */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <p style={{ fontWeight: "600", fontSize: "0.85rem", marginBottom: "0.3rem" }}>Input (State)</p>
+          {state.map((v, i) => (
             <div
-            style={{
-                width: "600px",
-                height: "250px",
-                position: "relative",
-                border: "2px solid #333",
-                borderRadius: "8px",
-                backgroundColor: "#f8f8f8",
-                overflow: "hidden",
-            }}
+              key={i}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                marginBottom: "3px",
+              }}
             >
-            {/* Track line */}
-            <div
+              <div
                 style={{
-                position: "absolute",
-                bottom: "20px",
-                left: "0",
-                width: "100%",
-                height: "2px",
-                backgroundColor: "#444",
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "50%",
+                  background: "#d9e2ec",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: "600",
+                  color: "#102a43",
+                  fontSize: "0.75rem",
+                  marginBottom: "2px",
                 }}
-            />
-
-            {/* Cart */}
-            <div
-                style={{
-                position: "absolute",
-                bottom: "22px",
-                left: `${300 + x * 120}px`, 
-                width: "60px",
-                height: "30px",
-                backgroundColor: "#2d2d2dff",
-                borderRadius: "6px",
-                transform: "translateX(-50%)",
-                boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-                transition: "left 0.1s linear",
-                }}
-            />
-
-            {/* Pole */}
-            <div
-                style={{
-                position: "absolute",
-                bottom: "52px",
-                left: `${300 + x * 120}px`,
-                width: "10px",
-                height: "150px",
-                backgroundColor: "#ffbf00ff",
-                transformOrigin: "bottom center",
-                transform: `translateX(-50%) rotate(${poleAngleDeg}deg)`,
-                borderRadius: "3px",
-                transition: "transform 0.1s linear",
-                }}
-            />
+              >
+                {v.toFixed(2)}
+              </div>
+              <span style={{ fontSize: "0.7rem", color: "#555" }}>
+                {["Cart Pos", "Cart Vel", "Pole Angle", "Pole Vel"][i]}
+              </span>
             </div>
+          ))}
+        </div>
 
-            {/* -------- PCA VISUALIZATION BELOW -------- */}
-            <div>
-            <h3>PCA Projection (Episode {currentEpisode.episode})</h3>
-            {pcaSnapshot?.pca_coords ? (
-                <div style={{ position: "relative", margin: "1rem auto" }}>
-                <svg
-                    width="400"
-                    height="400"
-                    style={{
-                    border: "1px solid #333",
-                    borderRadius: "8px",
-                    background: "#fafafa",
-                    margin: "0 auto",
-                    display: "block",
-                    }}
-                >
-                    {/* Grid lines */}
-                    {[0.25, 0.5, 0.75].map((f) => (
-                    <g key={f}>
-                        <line
-                        x1={f * 380 + 10}
-                        y1="10"
-                        x2={f * 380 + 10}
-                        y2="390"
-                        stroke="#ddd"
-                        strokeWidth="1"
-                        />
-                        <line
-                        x1="10"
-                        y1={f * 380 + 10}
-                        x2="390"
-                        y2={f * 380 + 10}
-                        stroke="#ddd"
-                        strokeWidth="1"
-                        />
-                    </g>
-                    ))}
+        <div style={{ fontSize: "1.8rem", color: "#555", marginTop: "0.8rem" }}>→</div>
 
-                    {/* PCA points (centered) */}
-                    {(() => {
-                    const meanX =
-                        pcaSnapshot.pca_coords.reduce((a, c) => a + c[0], 0) /
-                        pcaSnapshot.pca_coords.length;
-                    const meanY =
-                        pcaSnapshot.pca_coords.reduce((a, c) => a + c[1], 0) /
-                        pcaSnapshot.pca_coords.length;
-                    const centered = pcaSnapshot.pca_coords.map((c) => [
-                        c[0] - meanX,
-                        c[1] - meanY,
-                    ]);
-                    const xs = centered.map((c) => c[0]);
-                    const ys = centered.map((c) => c[1]);
-                    const maxAbs = Math.max(
-                        Math.abs(Math.min(...xs)),
-                        Math.abs(Math.max(...xs)),
-                        Math.abs(Math.min(...ys)),
-                        Math.abs(Math.max(...ys))
-                    );
-                    const scale = 160 / (maxAbs || 1);
+        {/* Hidden Layer */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <p style={{ fontWeight: "600", fontSize: "0.85rem", marginBottom: "0.3rem" }}>Hidden Layer</p>
+          <div
+            style={{
+              width: "80px",
+              height: "80px",
+              background: "linear-gradient(145deg, #ffeccc, #ffdda1)",
+              borderRadius: "12px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              textAlign: "center",
+              fontWeight: "bold",
+              color: "#7a4900",
+              fontSize: "0.85rem",
+              boxShadow: "0 3px 10px rgba(0,0,0,0.15)",
+            }}
+          >
+            Black Box
+          </div>
+        </div>
 
-                    return centered.map((coord, i) => {
-                        const cx = 200 + coord[0] * scale;
-                        const cy = 200 - coord[1] * scale;
-                        return (
-                        <circle
-                            key={i}
-                            cx={cx}
-                            cy={cy}
-                            r="4"
-                            fill={
-                            pcaSnapshot.labels[i] === 1 ? "#ff4500" : "#1e90ff"
-                            }
-                            opacity="0.8"
-                        />
-                        );
-                    });
-                    })()}
+        <div style={{ fontSize: "1.8rem", color: "#555", marginTop: "0.8rem" }}>→</div>
 
-                    {/* Center axes */}
-                    <line
-                    x1="200"
-                    y1="10"
-                    x2="200"
-                    y2="390"
-                    stroke="#888"
-                    strokeWidth="1"
-                    />
-                    <line
-                    x1="10"
-                    y1="200"
-                    x2="390"
-                    y2="200"
-                    stroke="#888"
-                    strokeWidth="1"
-                    />
-
-                    {/* Axis labels */}
-                    <text x="355" y="215" fontSize="12" fill="#555">
-                    PC1 →
-                    </text>
-                    <text
-                    x="200"
-                    y="25"
-                    fontSize="12"
-                    fill="#555"
-                    textAnchor="middle"
-                    transform="rotate(-90 200,25)"
-                    >
-                    PC2 →
-                    </text>
-                </svg>
-                </div>
-            ) : (
-                <p style={{ color: "#888" }}>No PCA data available for this episode.</p>
-            )}
+        {/* Output Layer */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <p style={{ fontWeight: "600", fontSize: "0.85rem", marginBottom: "0.3rem" }}>Output (Actions)</p>
+          {qValues.map((v, i) => (
+            <div
+              key={i}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                marginBottom: "3px",
+              }}
+            >
+              <div
+                style={{
+                  width: "60px",
+                  height: "34px",
+                  borderRadius: "10px",
+                  backgroundColor: i === chosenAction ? "#cfe2ff" : "#e2e8f0",
+                  border: "1px solid #a3bffa",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: "600",
+                  fontSize: "0.75rem",
+                }}
+              >
+                {v.toFixed(2)}
+              </div>
+              <span style={{ fontSize: "0.7rem", color: "#555" }}>{actionLabels[i]}</span>
             </div>
+          ))}
         </div>
+      </div>
+
+
+
+      {/* Current vs Next State Info */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: "1rem",
+          flexWrap: "wrap",
+          marginTop: "1rem",
+          marginBottom: "1.2rem"
+        }}
+      >
+        {/* Left Panel: Current State */}
+        <div
+          style={{
+            flex: "1 1 240px",
+            background: "#e0f7fa",
+            padding: "0.8rem",
+            borderRadius: "10px",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+            minWidth: "220px",
+            fontSize: "0.8rem"
+          }}
+        >
+          <p>
+            <b>State:</b> [{state.map((v) => v.toFixed(2)).join(", ")}]
+          </p>
+          <p>
+            <b>Optimal Action (Max):</b>{" "}
+            {actionLabels[qValues.indexOf(Math.max(...qValues))]} ({Math.max(...qValues).toFixed(2)})
+          </p>
+          <p>
+            <b>Epsilon:</b> {epsilon.toFixed(2)}
+          </p>
+          <p>
+            <b>Chosen Action:</b>{" "}
+            <span style={{ color: isGreedy ? "#007f00" : "#c1121f" }}>
+              {actionLabels[chosenAction]}
+            </span>{" "}
+            {isGreedy ? "(Greedy)" : "(Exploring)"}
+          </p>
         </div>
-    );
+
+        {/* Right Panel: Next State / Target */}
+        <div
+          style={{
+            flex: "1 1 240px",
+            background: "#fff3e0",
+            padding: "0.8rem",
+            borderRadius: "10px",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+            minWidth: "220px",
+            fontSize: "0.8rem"
+          }}
+        >
+          <p>
+            <b>Chosen Action Q-Value:</b> {qValues[chosenAction].toFixed(2)}
+          </p>
+          <p>
+            <b>Next State:</b> [{nextState.map((v) => v.toFixed(2)).join(", ")}]
+          </p>
+          <p>
+            <b>Reward:</b> {reward.toFixed(2)}
+          </p>
+          <p>
+            <b>Next-State Optimal Action (Max):</b> {actionLabels[nextMaxAction]} (
+            {nextMaxQ.toFixed(2)})
+          </p>
+        </div>
+      </div>
+
+      {/* Deep Q-Learning Target & Loss */}
+      <div
+        style={{
+          background: "#f1f3f5",
+          padding: "0.6rem 1rem",
+          borderRadius: "10px",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.05)",
+          textAlign: "center",
+          maxWidth: "560px",
+          margin: "auto",
+          fontSize: "0.8rem",
+          marginTop: "1rem"
+        }}
+      >
+        <h4 style={{ color: "#0077b6", marginBottom: "4px", fontSize: "0.9rem" }}>
+          Update Rule
+        </h4>
+
+        <p style={{ margin: "3px 0" }}>
+          <b>Target:</b> r + γ max(Q_target(s′,a′)) = {reward.toFixed(2)} + {gamma} ×{" "}
+          {nextMaxQ.toFixed(2)} = <b>{target.toFixed(2)}</b>
+        </p>
+
+        <p style={{ margin: "3px 0" }}>
+          <b>Loss:</b> (Target − Q(s,a))² = ({target.toFixed(2)} − {qValues[chosenAction].toFixed(2)}
+          )² = <b style={{ color: "#d32f2f" }}>{loss.toFixed(4)}</b>
+        </p>
+      </div>
+    </div>
+  );
 }
 
 export default Deepqlearning;
-
 
 
 
