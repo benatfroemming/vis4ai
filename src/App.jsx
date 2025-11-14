@@ -13,7 +13,7 @@ function App() {
   const containerStyle = {
     display: 'flex',
     width: '99vw',   // full viewport width
-    height: '115vh',  // full viewport height
+    height: '120vh',  // full viewport height
   };
 
   const panelStyle = {
