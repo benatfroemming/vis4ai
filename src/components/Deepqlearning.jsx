@@ -170,7 +170,7 @@ function Deepqlearning({ episodeIndex, stepIndex, setEpisodeIndex, setStepIndex 
         style={{
           textAlign: "center",
           color: "#0077b6",
-          fontSize: "0.9rem",
+          fontWeight: "600",
           marginTop: "1rem",
           marginBottom: "0.5rem",
         }}
@@ -313,7 +313,7 @@ function Deepqlearning({ episodeIndex, stepIndex, setEpisodeIndex, setStepIndex 
           }}
         >
           <p>
-            <b>State:</b> [{state.map((v) => v.toFixed(2)).join(", ")}]
+            <b>Current State:</b> [{state.map((v) => v.toFixed(2)).join(", ")}]
           </p>
           <p>
             <b>Optimal Action (Max):</b>{" "}
@@ -384,7 +384,7 @@ function Deepqlearning({ episodeIndex, stepIndex, setEpisodeIndex, setStepIndex 
 
         <p style={{ margin: "3px 0" }}>
           <b>Loss:</b> (Target − Q(s,a))² = ({target.toFixed(2)} − {qValues[chosenAction].toFixed(2)}
-          )² = <b style={{ color: "#d32f2f" }}>{loss.toFixed(4)}</b>
+          )² = <b style={{ color: "#005f99" }}>{loss.toFixed(3)}</b>
         </p>
       </div>
     </div>
